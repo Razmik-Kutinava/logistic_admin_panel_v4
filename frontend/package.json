@@ -1,0 +1,17 @@
+{
+  "name": "delivery-app-frontend",
+  "version": "1.0.0",
+  "description": "Frontend для приложения доставки",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {},
+  "dependencies": {}
+}
+
