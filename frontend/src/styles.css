@@ -45,11 +45,44 @@ button {
   color: #475569;
 }
 
+.metrics-card,
 .card {
   background: #fff;
   border-radius: 16px;
   padding: 24px;
   box-shadow: 0 6px 25px rgba(15, 23, 42, 0.1);
+}
+
+.metrics-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.metric {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #f8fafc;
+}
+
+.metric span {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.metric strong {
+  font-size: 24px;
+  color: #0f172a;
 }
 
 .table {
@@ -176,11 +209,29 @@ button {
 }
 
 .form input,
-.form select {
+.form select,
+.form textarea {
   border: 1px solid #cbd5f5;
   border-radius: 10px;
   padding: 10px 12px;
   font: inherit;
+}
+
+.inline-inputs {
+  display: flex;
+  gap: 12px;
+}
+
+.inline-inputs > * {
+  flex: 1;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+  color: #334155;
 }
 
 .form-actions {
@@ -214,6 +265,10 @@ button {
   .table-header,
   .table-row {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .inline-inputs {
+    flex-direction: column;
   }
 
   .modal {

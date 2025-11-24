@@ -16,13 +16,75 @@ export class DriversService {
 
   async create(createDriverDto: CreateDriverDto): Promise<Driver> {
     try {
-      const { status, ...rest } = createDriverDto;
-      const data = {
-        ...rest,
-        status: status ?? DRIVER_STATUS.ACTIVE,
-      } as unknown as Prisma.DriverUncheckedCreateInput;
+      const driver = await this.prisma.$transaction(async (tx) => {
+        const driverRecord = await tx.driver.create({
+          data: {
+            name: createDriverDto.name,
+            phone: createDriverDto.phone,
+            email: createDriverDto.email,
+            status: createDriverDto.status ?? DRIVER_STATUS.ACTIVE,
+          },
+        });
 
-      return await this.prisma.driver.create({ data });
+        await tx.driverProfile.create({
+          data: {
+            driverId: driverRecord.id,
+            licenseNumber: createDriverDto.licenseNumber,
+            dateOfBirth: createDriverDto.dateOfBirth
+              ? new Date(createDriverDto.dateOfBirth)
+              : undefined,
+            address: createDriverDto.address,
+            emergencyContact:
+              createDriverDto.emergencyContactName ||
+              createDriverDto.emergencyContactPhone
+                ? {
+                    name: createDriverDto.emergencyContactName,
+                    phone: createDriverDto.emergencyContactPhone,
+                  }
+                : undefined,
+          },
+        });
+
+        await tx.driverSettings.create({
+          data: {
+            driverId: driverRecord.id,
+            notificationsEnabled:
+              createDriverDto.notificationsEnabled ?? true,
+            autoAcceptOrders: createDriverDto.autoAcceptOrders ?? false,
+            preferredLanguage: createDriverDto.preferredLanguage ?? 'ru',
+          },
+        });
+
+        await tx.driverStatusSnapshot.create({
+          data: {
+            driverId: driverRecord.id,
+            status: driverRecord.status,
+            reason: createDriverDto.statusReason,
+            effectiveAt: new Date(),
+          },
+        });
+
+        if (createDriverDto.documentType) {
+          await tx.driverDocument.create({
+            data: {
+              driverId: driverRecord.id,
+              documentType: createDriverDto.documentType,
+              documentNumber: createDriverDto.documentNumber,
+              issuedAt: createDriverDto.documentIssuedAt
+                ? new Date(createDriverDto.documentIssuedAt)
+                : undefined,
+              expiresAt: createDriverDto.documentExpiresAt
+                ? new Date(createDriverDto.documentExpiresAt)
+                : undefined,
+              fileUrl: createDriverDto.documentFileUrl,
+            },
+          });
+        }
+
+        return driverRecord;
+      });
+
+      return driver;
     } catch (error) {
       if (error.code === 'P2002') {
         throw new ConflictException('Водитель с такими данными уже существует');

@@ -16,6 +16,36 @@ export interface CreateDriverPayload {
   phone: string;
   email: string;
   status?: DriverStatus;
+  licenseNumber: string;
+  dateOfBirth?: string;
+  address?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  notificationsEnabled?: boolean;
+  autoAcceptOrders?: boolean;
+  preferredLanguage?: string;
+  documentType?: string;
+  documentNumber?: string;
+  documentIssuedAt?: string;
+  documentExpiresAt?: string;
+  documentFileUrl?: string;
+  statusReason?: string;
+}
+
+export interface DashboardMetrics {
+  drivers: number;
+  zones: number;
+  orders: number;
+  routes: number;
+  shifts: number;
+  devices: number;
+  alerts: number;
+  documents: number;
+  logs: {
+    systemLogs: number;
+    apiLogs: number;
+    appErrors: number;
+  };
 }
 
 async function handleResponse<T>(response: Response): Promise<T> {
@@ -50,5 +80,10 @@ export async function deleteDriver(id: string): Promise<void> {
     const error = await res.json().catch(() => ({}));
     throw new Error(error?.message ?? 'Не удалось удалить водителя');
   }
+}
+
+export async function getMetrics(): Promise<DashboardMetrics> {
+  const res = await fetch(`${BASE_URL}/metrics`);
+  return handleResponse<DashboardMetrics>(res);
 }
 

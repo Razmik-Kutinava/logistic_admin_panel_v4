@@ -9,17 +9,23 @@ datasource db {
 }
 
 model Driver {
-  id         String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name       String            @db.VarChar(255)
-  phone      String            @unique @db.VarChar(20)
-  email      String            @unique @db.VarChar(255)
-  status     String            @default("active") @db.VarChar(50)
-  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  devices    Device[]
-  statusLogs DriverStatusLog[]
-  gpsLogs    GpsLog[]
-  shifts     Shift[]
+  id           String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String                 @db.VarChar(255)
+  phone        String                 @unique @db.VarChar(20)
+  email        String                 @unique @db.VarChar(255)
+  status       String                 @default("active") @db.VarChar(50)
+  createdAt    DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  devices      Device[]
+  statusLogs   DriverStatusLog[]
+  gpsLogs      GpsLog[]
+  shifts       Shift[]
+  driverProfile   DriverProfile?
+  driverSettings  DriverSettings?
+  driverStatuses  DriverStatusSnapshot[]
+  driverDocuments DriverDocument[]
+  zoneAssignments ZoneDriver[]
+  ordersAssigned  OrderAssignment[]
 
   @@index([status], map: "idx_drivers_status")
   @@index([createdAt(sort: Desc)], map: "idx_drivers_created")
@@ -64,6 +70,7 @@ model Shift {
   distanceKm      Float?    @map("distance_km")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   driver          Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  events          ShiftEvent[]
 
   @@index([driverId], map: "idx_shifts_driver")
   @@index([status], map: "idx_shifts_status")
@@ -72,15 +79,315 @@ model Shift {
 }
 
 model Device {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  driverId     String?  @map("driver_id") @db.Uuid
-  deviceType   String?  @map("device_type") @db.VarChar(50)
-  model        String?  @db.VarChar(100)
-  serialNumber String?  @unique @map("serial_number") @db.VarChar(255)
-  pushToken    String?  @map("push_token") @db.VarChar(500)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  driver       Driver?  @relation(fields: [driverId], references: [id], onUpdate: NoAction)
+  id           String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId     String?         @map("driver_id") @db.Uuid
+  deviceType   String?         @map("device_type") @db.VarChar(50)
+  model        String?         @db.VarChar(100)
+  serialNumber String?         @unique @map("serial_number") @db.VarChar(255)
+  pushToken    String?         @map("push_token") @db.VarChar(500)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  driver       Driver?         @relation(fields: [driverId], references: [id], onUpdate: NoAction)
+  sessions     DeviceSession[]
+  tokens       PushToken[]
 
   @@index([driverId], map: "idx_devices_driver")
   @@map("devices")
+}
+
+model DriverProfile {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId         String   @unique @map("driver_id") @db.Uuid
+  licenseNumber    String   @map("license_number") @db.VarChar(64)
+  dateOfBirth      DateTime? @map("date_of_birth")
+  address          String?  @db.Text
+  emergencyContact Json?    @map("emergency_contact")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  driver           Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("driver_profile")
+}
+
+model DriverSettings {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId            String   @unique @map("driver_id") @db.Uuid
+  notificationsEnabled Boolean @map("notifications_enabled") @default(true)
+  autoAcceptOrders    Boolean  @map("auto_accept_orders") @default(false)
+  preferredLanguage   String?  @map("preferred_language") @db.VarChar(10)
+  preferredZone       String?  @map("preferred_zone") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  driver              Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  preferredZoneRel    Zone?    @relation(fields: [preferredZone], references: [id])
+
+  @@map("driver_settings")
+}
+
+model DriverStatusSnapshot {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId    String   @map("driver_id") @db.Uuid
+  status      String   @db.VarChar(50)
+  reason      String?
+  effectiveAt DateTime @map("effective_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  driver      Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("driver_status")
+}
+
+model DriverDocument {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId      String   @map("driver_id") @db.Uuid
+  documentType  String   @map("document_type") @db.VarChar(50)
+  documentNumber String? @map("document_number") @db.VarChar(100)
+  issuedAt      DateTime? @map("issued_at")
+  expiresAt     DateTime? @map("expires_at")
+  fileUrl       String?  @map("file_url")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  driver        Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("driver_documents")
+}
+
+model Zone {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String        @db.VarChar(120)
+  description String?       @db.Text
+  color       String?       @db.VarChar(16)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  streets     ZoneStreet[]
+  assignments ZoneDriver[]
+  preferredBy DriverSettings[]
+
+  @@map("zones")
+}
+
+model ZoneStreet {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  zoneId    String   @map("zone_id") @db.Uuid
+  streetName String  @map("street_name")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  zone      Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+
+  @@map("zone_streets")
+}
+
+model ZoneDriver {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  zoneId    String   @map("zone_id") @db.Uuid
+  driverId  String   @map("driver_id") @db.Uuid
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  zone      Zone     @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@map("zone_driver")
+}
+
+model Order {
+  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  externalId    String?            @map("external_id") @db.VarChar(64)
+  customerName  String?            @map("customer_name")
+  customerPhone String?            @map("customer_phone") @db.VarChar(32)
+  status        String             @default("new") @db.VarChar(50)
+  priority      String             @default("normal") @db.VarChar(20)
+  scheduledAt   DateTime?          @map("scheduled_at") @db.Timestamptz(6)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  points        OrderPoint[]
+  assignments   OrderAssignment[]
+  statusLogs    OrderStatusLog[]
+  photos        OrderPhoto[]
+  signatures    CustomerSignature[]
+  routes        Route[]
+
+  @@map("orders")
+}
+
+model OrderPoint {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
+  pointType   String   @map("point_type") @db.VarChar(20)
+  sequence    Int
+  address     String   @db.Text
+  latitude    Decimal? @db.Decimal(10, 8)
+  longitude   Decimal? @db.Decimal(11, 8)
+  plannedAt   DateTime? @map("planned_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  photos      OrderPhoto[]
+
+  @@map("order_points")
+}
+
+model OrderAssignment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  driverId  String?  @map("driver_id") @db.Uuid
+  status    String   @default("pending") @db.VarChar(30)
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  driver    Driver?  @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  @@map("order_assignments")
+}
+
+model OrderStatusLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  status    String   @db.VarChar(50)
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_status_logs")
+}
+
+model OrderPhoto {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId   String   @map("order_id") @db.Uuid
+  pointId   String?  @map("point_id") @db.Uuid
+  url       String   @db.Text
+  description String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  point     OrderPoint? @relation(fields: [pointId], references: [id], onDelete: SetNull)
+
+  @@map("order_photos")
+}
+
+model CustomerSignature {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId     String   @map("order_id") @db.Uuid
+  signerName  String?  @map("signer_name")
+  signedAt    DateTime? @map("signed_at") @db.Timestamptz(6)
+  signatureUrl String?  @map("signature_url")
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("customer_signatures")
+}
+
+model Route {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderId     String?     @map("order_id") @db.Uuid
+  name        String?
+  status      String      @default("planned") @db.VarChar(30)
+  startedAt   DateTime?   @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime?   @map("completed_at") @db.Timestamptz(6)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  order       Order?      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  points      RoutePoint[]
+  logs        RouteLog[]
+
+  @@map("routes")
+}
+
+model RoutePoint {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routeId   String   @map("route_id") @db.Uuid
+  sequence  Int
+  latitude  Decimal? @db.Decimal(10, 8)
+  longitude Decimal? @db.Decimal(11, 8)
+  reachedAt DateTime? @map("reached_at") @db.Timestamptz(6)
+  route     Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@map("route_points")
+}
+
+model RouteLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routeId   String   @map("route_id") @db.Uuid
+  message   String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  route     Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@map("route_logs")
+}
+
+model ShiftEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shiftId   String   @map("shift_id") @db.Uuid
+  eventType String   @map("event_type") @db.VarChar(40)
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  shift     Shift    @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@map("shift_events")
+}
+
+model DeviceSession {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deviceId  String   @map("device_id") @db.Uuid
+  startedAt DateTime @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt   DateTime? @map("ended_at") @db.Timestamptz(6)
+  status    String   @default("active") @db.VarChar(30)
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@map("device_sessions")
+}
+
+model PushToken {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  deviceId  String   @map("device_id") @db.Uuid
+  token     String
+  platform  String?  @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@map("push_tokens")
+}
+
+model Alert {
+  id         String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alertType  String        @map("alert_type") @db.VarChar(50)
+  severity   String        @default("info") @db.VarChar(20)
+  message    String?
+  status     String        @default("open") @db.VarChar(20)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt DateTime?     @map("resolved_at") @db.Timestamptz(6)
+  actions    AlertAction[]
+
+  @@map("alerts")
+}
+
+model AlertAction {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alertId   String   @map("alert_id") @db.Uuid
+  action    String
+  actor     String?
+  comment   String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@map("alert_actions")
+}
+
+model SystemLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  logLevel  String   @map("log_level") @db.VarChar(20)
+  message   String
+  context   Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("system_logs")
+}
+
+model ApiLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  method     String?  @db.VarChar(10)
+  path       String?
+  statusCode Int?     @map("status_code")
+  durationMs Int?     @map("duration_ms")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("api_logs")
+}
+
+model AppError {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source     String?  @db.VarChar(50)
+  message    String
+  stackTrace String?  @map("stack_trace")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("app_errors")
 }

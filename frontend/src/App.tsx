@@ -5,6 +5,7 @@ import {
   createDriver,
   deleteDriver,
   getDrivers,
+  getMetrics,
 } from './lib/api';
 
 const STATUSES: { label: string; value: DriverStatus }[] = [
@@ -13,14 +14,30 @@ const STATUSES: { label: string; value: DriverStatus }[] = [
   { label: 'В рейсе', value: 'on_shift' },
 ];
 
+const initialFormState = {
+  name: '',
+  phone: '',
+  email: '',
+  status: 'active' as DriverStatus,
+  licenseNumber: '',
+  dateOfBirth: '',
+  address: '',
+  emergencyContactName: '',
+  emergencyContactPhone: '',
+  notificationsEnabled: true,
+  autoAcceptOrders: false,
+  preferredLanguage: 'ru',
+  documentType: '',
+  documentNumber: '',
+  documentIssuedAt: '',
+  documentExpiresAt: '',
+  documentFileUrl: '',
+  statusReason: '',
+};
+
 const App: Component = () => {
   const [isFormOpen, setIsFormOpen] = createSignal(false);
-  const [form, setForm] = createSignal({
-    name: '',
-    phone: '',
-    email: '',
-    status: 'active' as DriverStatus,
-  });
+  const [form, setForm] = createSignal(initialFormState);
   const [isSubmitting, setIsSubmitting] = createSignal(false);
   const [message, setMessage] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -28,14 +45,9 @@ const App: Component = () => {
   const [deleteLoadingId, setDeleteLoadingId] = createSignal<string | null>(null);
 
   const [drivers, { refetch }] = createResource(getDrivers);
+  const [metrics, { refetch: refetchMetrics }] = createResource(getMetrics);
 
-  const resetForm = () =>
-    setForm({
-      name: '',
-      phone: '',
-      email: '',
-      status: 'active',
-    });
+  const resetForm = () => setForm(initialFormState);
 
   const handleSubmit = async (evt: Event) => {
     evt.preventDefault();
@@ -47,7 +59,7 @@ const App: Component = () => {
       setMessage('Водитель успешно создан');
       setIsFormOpen(false);
       resetForm();
-      await refetch();
+      await Promise.all([refetch(), refetchMetrics()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось создать водителя');
     } finally {
@@ -80,6 +92,58 @@ const App: Component = () => {
         </button>
       </header>
 
+      <section class="metrics-card">
+        <h2>Панель доменов</h2>
+        <Show when={!metrics.loading} fallback={<p>Загрузка метрик...</p>}>
+          <div class="metrics-grid">
+            <div class="metric">
+              <span>Водители</span>
+              <strong>{metrics()?.drivers ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>Зоны</span>
+              <strong>{metrics()?.zones ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>Заказы</span>
+              <strong>{metrics()?.orders ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>Маршруты</span>
+              <strong>{metrics()?.routes ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>Смены</span>
+              <strong>{metrics()?.shifts ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>Устройства</span>
+              <strong>{metrics()?.devices ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>Документы</span>
+              <strong>{metrics()?.documents ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>Алерты</span>
+              <strong>{metrics()?.alerts ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>System Logs</span>
+              <strong>{metrics()?.logs.systemLogs ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>API Logs</span>
+              <strong>{metrics()?.logs.apiLogs ?? 0}</strong>
+            </div>
+            <div class="metric">
+              <span>App Errors</span>
+              <strong>{metrics()?.logs.appErrors ?? 0}</strong>
+            </div>
+          </div>
+        </Show>
+      </section>
+
       <section class="card">
         <Show when={!drivers.loading} fallback={<p>Загрузка...</p>}>
           <Show
@@ -111,7 +175,7 @@ const App: Component = () => {
                         setDeleteLoadingId(driver.id);
                         try {
                           await deleteDriver(driver.id);
-                          await refetch();
+                          await Promise.all([refetch(), refetchMetrics()]);
                         } catch (err) {
                           setDeleteError(
                             err instanceof Error
@@ -172,6 +236,65 @@ const App: Component = () => {
             </label>
 
             <label>
+              Номер лицензии
+              <input
+                type="text"
+                required
+                value={form().licenseNumber}
+                onInput={(e) =>
+                  setForm({ ...form(), licenseNumber: e.currentTarget.value })
+                }
+              />
+            </label>
+
+            <label>
+              Дата рождения
+              <input
+                type="date"
+                value={form().dateOfBirth}
+                onInput={(e) =>
+                  setForm({ ...form(), dateOfBirth: e.currentTarget.value })
+                }
+              />
+            </label>
+
+            <label>
+              Адрес
+              <textarea
+                rows={2}
+                value={form().address}
+                onInput={(e) =>
+                  setForm({ ...form(), address: e.currentTarget.value })
+                }
+              />
+            </label>
+
+            <label>
+              Контакт для ЧС
+              <div class="inline-inputs">
+                <input
+                  type="text"
+                  placeholder="Имя"
+                  value={form().emergencyContactName}
+                  onInput={(e) =>
+                    setForm({ ...form(), emergencyContactName: e.currentTarget.value })
+                  }
+                />
+                <input
+                  type="tel"
+                  placeholder="Телефон"
+                  value={form().emergencyContactPhone}
+                  onInput={(e) =>
+                    setForm({
+                      ...form(),
+                      emergencyContactPhone: e.currentTarget.value,
+                    })
+                  }
+                />
+              </div>
+            </label>
+
+            <label>
               Статус
               <select
                 value={form().status}
@@ -185,6 +308,115 @@ const App: Component = () => {
                   )}
                 </For>
               </select>
+            </label>
+
+            <label class="checkbox">
+              <input
+                type="checkbox"
+                checked={form().notificationsEnabled}
+                onInput={(e) =>
+                  setForm({
+                    ...form(),
+                    notificationsEnabled: e.currentTarget.checked,
+                  })
+                }
+              />
+              Уведомления включены
+            </label>
+
+            <label class="checkbox">
+              <input
+                type="checkbox"
+                checked={form().autoAcceptOrders}
+                onInput={(e) =>
+                  setForm({
+                    ...form(),
+                    autoAcceptOrders: e.currentTarget.checked,
+                  })
+                }
+              />
+              Авто принятие заказов
+            </label>
+
+            <label>
+              Язык интерфейса
+              <input
+                type="text"
+                value={form().preferredLanguage}
+                onInput={(e) =>
+                  setForm({
+                    ...form(),
+                    preferredLanguage: e.currentTarget.value,
+                  })
+                }
+              />
+            </label>
+
+            <label>
+              Тип документа
+              <input
+                type="text"
+                value={form().documentType}
+                onInput={(e) =>
+                  setForm({ ...form(), documentType: e.currentTarget.value })
+                }
+              />
+            </label>
+
+            <label>
+              Номер документа
+              <input
+                type="text"
+                value={form().documentNumber}
+                onInput={(e) =>
+                  setForm({ ...form(), documentNumber: e.currentTarget.value })
+                }
+              />
+            </label>
+
+            <div class="inline-inputs">
+              <label>
+                Дата выдачи
+                <input
+                  type="date"
+                  value={form().documentIssuedAt}
+                  onInput={(e) =>
+                    setForm({ ...form(), documentIssuedAt: e.currentTarget.value })
+                  }
+                />
+              </label>
+              <label>
+                Дата окончания
+                <input
+                  type="date"
+                  value={form().documentExpiresAt}
+                  onInput={(e) =>
+                    setForm({ ...form(), documentExpiresAt: e.currentTarget.value })
+                  }
+                />
+              </label>
+            </div>
+
+            <label>
+              Ссылка на файл
+              <input
+                type="url"
+                value={form().documentFileUrl}
+                onInput={(e) =>
+                  setForm({ ...form(), documentFileUrl: e.currentTarget.value })
+                }
+              />
+            </label>
+
+            <label>
+              Комментарий к статусу
+              <input
+                type="text"
+                value={form().statusReason}
+                onInput={(e) =>
+                  setForm({ ...form(), statusReason: e.currentTarget.value })
+                }
+              />
             </label>
 
             <Show when={message()}>
