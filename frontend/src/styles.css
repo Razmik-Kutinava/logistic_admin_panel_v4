@@ -61,7 +61,7 @@ button {
 .table-header,
 .table-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
   padding: 12px 0;
 }
@@ -115,6 +115,19 @@ button {
 
 .primary:not(:disabled):hover {
   background: #1d4ed8;
+}
+
+.danger {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 600;
+}
+
+.danger:disabled {
+  opacity: 0.6;
 }
 
 .secondary {

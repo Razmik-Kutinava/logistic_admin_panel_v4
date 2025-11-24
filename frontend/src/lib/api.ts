@@ -42,3 +42,13 @@ export async function createDriver(payload: CreateDriverPayload): Promise<Driver
   return handleResponse<Driver>(res);
 }
 
+export async function deleteDriver(id: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/drivers/${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error?.message ?? 'Не удалось удалить водителя');
+  }
+}
+

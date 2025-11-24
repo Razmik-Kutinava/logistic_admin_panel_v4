@@ -3,6 +3,7 @@ import {
   Driver,
   DriverStatus,
   createDriver,
+  deleteDriver,
   getDrivers,
 } from './lib/api';
 
@@ -23,6 +24,8 @@ const App: Component = () => {
   const [isSubmitting, setIsSubmitting] = createSignal(false);
   const [message, setMessage] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [deleteError, setDeleteError] = createSignal<string | null>(null);
+  const [deleteLoadingId, setDeleteLoadingId] = createSignal<string | null>(null);
 
   const [drivers, { refetch }] = createResource(getDrivers);
 
@@ -89,6 +92,7 @@ const App: Component = () => {
                 <span>Телефон</span>
                 <span>Email</span>
                 <span>Статус</span>
+                <span />
               </div>
               <For each={drivers() as Driver[]}>
                 {(driver) => (
@@ -99,10 +103,35 @@ const App: Component = () => {
                     <span class={`badge badge-${driver.status}`}>
                       {renderStatus(driver.status)}
                     </span>
+                    <button
+                      class="danger"
+                      disabled={deleteLoadingId() === driver.id}
+                      onClick={async () => {
+                        setDeleteError(null);
+                        setDeleteLoadingId(driver.id);
+                        try {
+                          await deleteDriver(driver.id);
+                          await refetch();
+                        } catch (err) {
+                          setDeleteError(
+                            err instanceof Error
+                              ? err.message
+                              : 'Ошибка при удалении',
+                          );
+                        } finally {
+                          setDeleteLoadingId(null);
+                        }
+                      }}
+                    >
+                      {deleteLoadingId() === driver.id ? 'Удаление...' : 'Удалить'}
+                    </button>
                   </div>
                 )}
               </For>
             </div>
+            <Show when={deleteError()}>
+              <p class="message error">{deleteError()}</p>
+            </Show>
           </Show>
         </Show>
       </section>
