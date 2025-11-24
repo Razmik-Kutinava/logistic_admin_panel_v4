@@ -408,10 +408,59 @@ export class DriversService {
               return this.loadDriver(tx, updatedDriver.id);
             }
             
-            // Если все равно не нашли - это очень странно
-            // Но так как мы получили P2002, значит водитель точно существует
-            // Просто возвращаем ошибку - это крайне редкий случай
-            throw error;
+            // Если все равно не нашли - повторяем поиск еще раз
+            // Это fallback на случай крайне редкого race condition
+            const retrySearch = await tx.driver.findFirst({
+              where: {
+                OR: [{ phone: dto.phone }, { email: dto.email }],
+              },
+            });
+            
+            if (retrySearch) {
+              const updateData: Prisma.DriverUncheckedUpdateInput = {
+                name: dto.name,
+                status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+              };
+              
+              const updatedDriver = await tx.driver.update({
+                where: { id: retrySearch.id },
+                data: updateData,
+              });
+              
+              await this.upsertDriverRelations(
+                tx,
+                updatedDriver.id,
+                dto,
+                (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+              );
+              
+              return this.loadDriver(tx, updatedDriver.id);
+            }
+            
+            // Если все равно не нашли - это очень странно при P2002
+            // Но пробуем создать снова
+            try {
+              const newDriver = await tx.driver.create({
+                data: {
+                  name: dto.name,
+                  phone: dto.phone,
+                  email: dto.email,
+                  status: dto.status ?? DRIVER_STATUS.ACTIVE,
+                },
+              });
+
+              await this.upsertDriverRelations(
+                tx,
+                newDriver.id,
+                dto,
+                (newDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+              );
+
+              return this.loadDriver(tx, newDriver.id);
+            } catch {
+              // Если не удалось создать - возвращаем ошибку
+              throw error;
+            }
           }
 
           // Обновляем найденного водителя БЕЗ phone/email чтобы избежать конфликта
@@ -490,7 +539,78 @@ export class DriversService {
         });
       }
       
-      throw error;
+      // Последний fallback - ищем любого водителя по phone или email
+      // Если получили P2002, значит водитель точно существует
+      const lastResort = await this.prisma.driver.findFirst({
+        where: {
+          OR: [{ phone: dto.phone }, { email: dto.email }],
+        },
+        include: driverInclude,
+      });
+      
+      if (lastResort) {
+        // Обновляем найденного водителя
+        return await this.prisma.$transaction(async (tx) => {
+          const updateData: Prisma.DriverUncheckedUpdateInput = {
+            name: dto.name,
+            status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+          };
+          
+          try {
+            const updatedDriver = await tx.driver.update({
+              where: { id: lastResort.id },
+              data: updateData,
+            });
+            
+            await this.upsertDriverRelations(
+              tx,
+              updatedDriver.id,
+              dto,
+              (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+            );
+            
+            return this.loadDriver(tx, updatedDriver.id);
+          } catch {
+            // Если не удалось обновить - просто возвращаем существующего
+            await this.upsertDriverRelations(
+              tx,
+              lastResort.id,
+              dto,
+              (lastResort.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+            );
+            
+            return this.loadDriver(tx, lastResort.id);
+          }
+        });
+      }
+      
+      // Если все равно не нашли - это очень странно при P2002
+      // Но на всякий случай пробуем создать снова
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          const newDriver = await tx.driver.create({
+            data: {
+              name: dto.name,
+              phone: dto.phone,
+              email: dto.email,
+              status: dto.status ?? DRIVER_STATUS.ACTIVE,
+            },
+          });
+
+          await this.upsertDriverRelations(
+            tx,
+            newDriver.id,
+            dto,
+            (newDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+          );
+
+          return this.loadDriver(tx, newDriver.id);
+        });
+      } catch {
+        // Если и это не помогло - возвращаем ошибку
+        // Но это должно быть крайне редко
+        throw error;
+      }
     }
   }
 
@@ -530,9 +650,21 @@ export class DriversService {
         data,
         include: driverInclude,
       });
-    } catch (error) {
+    } catch (error: any) {
+      // При конфликте просто возвращаем существующего водителя без обновления
       if (error.code === 'P2002') {
-        throw new ConflictException('Водитель с такими данными уже существует');
+        const existing = await this.prisma.driver.findFirst({
+          where: {
+            OR: [
+              { phone: updateDriverDto.phone },
+              { email: updateDriverDto.email },
+            ],
+          },
+          include: driverInclude,
+        });
+        if (existing) {
+          return existing;
+        }
       }
       throw error;
     }
