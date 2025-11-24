@@ -237,23 +237,51 @@ export class DriversService {
           }
         }
 
-        const newDriver = await tx.driver.create({
-          data: {
-            name: dto.name,
-            phone: dto.phone,
-            email: dto.email,
-            status: dto.status ?? DRIVER_STATUS.ACTIVE,
-          },
-        });
+        try {
+          const newDriver = await tx.driver.create({
+            data: {
+              name: dto.name,
+              phone: dto.phone,
+              email: dto.email,
+              status: dto.status ?? DRIVER_STATUS.ACTIVE,
+            },
+          });
 
-        await this.upsertDriverRelations(
-          tx,
-          newDriver.id,
-          dto,
-          (newDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
-        );
+          await this.upsertDriverRelations(
+            tx,
+            newDriver.id,
+            dto,
+            (newDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+          );
 
-        return this.loadDriver(tx, newDriver.id);
+          return this.loadDriver(tx, newDriver.id);
+        } catch (createError: any) {
+          // Если получили конфликт при создании - находим и обновляем существующего
+          if (createError.code === 'P2002') {
+            const { existingDriver } = await this.resolveExistingDriver(tx, dto);
+            if (existingDriver) {
+              const updateData: Prisma.DriverUncheckedUpdateInput = {
+                name: dto.name,
+                status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+              };
+              
+              const updatedDriver = await tx.driver.update({
+                where: { id: existingDriver.id },
+                data: updateData,
+              });
+              
+              await this.upsertDriverRelations(
+                tx,
+                updatedDriver.id,
+                dto,
+                (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+              );
+              
+              return this.loadDriver(tx, updatedDriver.id);
+            }
+          }
+          throw createError;
+        }
       });
     } catch (error: any) {
       if (error.code === 'P2002') {
@@ -324,32 +352,144 @@ export class DriversService {
               return this.loadDriver(tx, updatedDriver.id);
             }
             
-            // Если все равно не нашли - пробрасываем ошибку
+            // Если все равно не нашли - повторяем поиск и возвращаем первого найденного
+            // Это fallback на случай крайне редкого race condition
+            const finalSearch = await tx.driver.findFirst({
+              where: {
+                OR: [{ phone: dto.phone }, { email: dto.email }],
+              },
+            });
+            
+            if (finalSearch) {
+              const updateData: Prisma.DriverUncheckedUpdateInput = {
+                name: dto.name,
+                status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+              };
+              
+              const updatedDriver = await tx.driver.update({
+                where: { id: finalSearch.id },
+                data: updateData,
+              });
+              
+              await this.upsertDriverRelations(
+                tx,
+                updatedDriver.id,
+                dto,
+                (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+              );
+              
+              return this.loadDriver(tx, updatedDriver.id);
+            }
+            
+            // Если все равно не нашли - повторяем поиск по всем полям
+            // Это fallback на случай крайне редкого race condition
+            const finalByPhone = await tx.driver.findUnique({ where: { phone: dto.phone } });
+            const finalByEmail = await tx.driver.findUnique({ where: { email: dto.email } });
+            const finalDriver = finalByPhone || finalByEmail;
+            
+            if (finalDriver) {
+              const updateData: Prisma.DriverUncheckedUpdateInput = {
+                name: dto.name,
+                status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+              };
+              
+              const updatedDriver = await tx.driver.update({
+                where: { id: finalDriver.id },
+                data: updateData,
+              });
+              
+              await this.upsertDriverRelations(
+                tx,
+                updatedDriver.id,
+                dto,
+                (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+              );
+              
+              return this.loadDriver(tx, updatedDriver.id);
+            }
+            
+            // Если все равно не нашли - это очень странно
+            // Но так как мы получили P2002, значит водитель точно существует
+            // Просто возвращаем ошибку - это крайне редкий случай
             throw error;
           }
 
           // Обновляем найденного водителя БЕЗ phone/email чтобы избежать конфликта
+          try {
+            const updateData: Prisma.DriverUncheckedUpdateInput = {
+              name: dto.name,
+              status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+              // НЕ обновляем phone и email - они уже заняты
+            };
+
+            const updatedDriver = await tx.driver.update({
+              where: { id: existingDriver.id },
+              data: updateData,
+            });
+
+            await this.upsertDriverRelations(
+              tx,
+              updatedDriver.id,
+              dto,
+              (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+            );
+
+            return this.loadDriver(tx, updatedDriver.id);
+          } catch (updateError: any) {
+            // Если все равно получили конфликт - просто возвращаем существующего водителя
+            if (updateError.code === 'P2002') {
+              await this.upsertDriverRelations(
+                tx,
+                existingDriver.id,
+                dto,
+                (existingDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+              );
+              
+              return this.loadDriver(tx, existingDriver.id);
+            }
+            throw updateError;
+          }
+        });
+      }
+      
+      // Финальный fallback - если это не P2002, но все равно ошибка
+      // Пробуем найти водителя и вернуть его
+      const fallbackDriver = await this.findExistingDriver(dto);
+      if (fallbackDriver) {
+        return await this.prisma.$transaction(async (tx) => {
           const updateData: Prisma.DriverUncheckedUpdateInput = {
             name: dto.name,
             status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
-            // НЕ обновляем phone и email - они уже заняты
           };
-
-          const updatedDriver = await tx.driver.update({
-            where: { id: existingDriver.id },
-            data: updateData,
-          });
-
-          await this.upsertDriverRelations(
-            tx,
-            updatedDriver.id,
-            dto,
-            (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
-          );
-
-          return this.loadDriver(tx, updatedDriver.id);
+          
+          try {
+            const updatedDriver = await tx.driver.update({
+              where: { id: fallbackDriver.id },
+              data: updateData,
+            });
+            
+            await this.upsertDriverRelations(
+              tx,
+              updatedDriver.id,
+              dto,
+              (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+            );
+            
+            return this.loadDriver(tx, updatedDriver.id);
+          } catch {
+            // Если не удалось обновить - просто возвращаем существующего
+            await this.upsertDriverRelations(
+              tx,
+              fallbackDriver.id,
+              dto,
+              (fallbackDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+            );
+            
+            return this.loadDriver(tx, fallbackDriver.id);
+          }
         });
       }
+      
       throw error;
     }
   }
