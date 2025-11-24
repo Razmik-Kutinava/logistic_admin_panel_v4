@@ -47,6 +47,11 @@ const App: Component = () => {
   const [drivers, { refetch }] = createResource(getDrivers);
   const [metrics, { refetch: refetchMetrics }] = createResource(getMetrics);
 
+  const apiUnavailable = () =>
+    drivers.error || metrics.error
+      ? 'API недоступно. Проверьте, запущен ли backend (npm run dev в папке backend).'
+      : null;
+
   const resetForm = () => setForm(initialFormState);
 
   const handleSubmit = async (evt: Event) => {
@@ -92,9 +97,16 @@ const App: Component = () => {
         </button>
       </header>
 
-      <section class="metrics-card">
+      <Show when={apiUnavailable()}>
+        {(msg) => <p class="message error">{msg()}</p>}
+      </Show>
+
+      <section class="metrics-card card">
         <h2>Панель доменов</h2>
-        <Show when={!metrics.loading} fallback={<p>Загрузка метрик...</p>}>
+        <Show
+          when={!metrics.loading && !metrics.error}
+          fallback={<p>{metrics.loading ? 'Загрузка метрик...' : 'API недоступно'}</p>}
+        >
           <div class="metrics-grid">
             <div class="metric">
               <span>Водители</span>
@@ -145,7 +157,10 @@ const App: Component = () => {
       </section>
 
       <section class="card">
-        <Show when={!drivers.loading} fallback={<p>Загрузка...</p>}>
+        <Show
+          when={!drivers.loading && !drivers.error}
+          fallback={<p>{drivers.loading ? 'Загрузка...' : 'API недоступно'}</p>}
+        >
           <Show
             when={drivers()?.length}
             fallback={<p>Пока нет водителей. Создайте первого.</p>}
