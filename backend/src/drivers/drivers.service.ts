@@ -44,6 +44,31 @@ export class DriversService {
     };
   }
 
+  private async findExistingDriver(dto: CreateDriverDto) {
+    const contactMatch = await this.prisma.driver.findFirst({
+      where: {
+        OR: [{ phone: dto.phone }, { email: dto.email }],
+      },
+    });
+
+    if (contactMatch) {
+      return contactMatch;
+    }
+
+    const profileMatch = await this.prisma.driverProfile.findFirst({
+      where: { licenseNumber: dto.licenseNumber },
+      select: { driverId: true },
+    });
+
+    if (profileMatch) {
+      return this.prisma.driver.findUnique({
+        where: { id: profileMatch.driverId },
+      });
+    }
+
+    return null;
+  }
+
   private async upsertDriverRelations(
     tx: Prisma.TransactionClient,
     driverId: string,
@@ -146,11 +171,7 @@ export class DriversService {
       return driver;
     } catch (error: any) {
       if (error.code === 'P2002') {
-        const existing = await this.prisma.driver.findFirst({
-          where: {
-            OR: [{ phone: dto.phone }, { email: dto.email }],
-          },
-        });
+        const existing = await this.findExistingDriver(dto);
 
         if (!existing) {
           throw new ConflictException('Водитель с такими данными уже существует');
