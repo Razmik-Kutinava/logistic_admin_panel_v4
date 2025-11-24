@@ -168,19 +168,67 @@ const App: Component = () => {
             <div class="table">
               <div class="table-header">
                 <span>Имя</span>
-                <span>Телефон</span>
-                <span>Email</span>
+                <span>Контакты</span>
+                <span>Лицензия</span>
+                <span>Документ</span>
                 <span>Статус</span>
                 <span />
               </div>
               <For each={drivers() as Driver[]}>
                 {(driver) => (
                   <div class="table-row">
-                    <span>{driver.name}</span>
-                    <span>{driver.phone}</span>
-                    <span>{driver.email}</span>
+                    <span>
+                      {driver.name}
+                      <br />
+                      <small>
+                        {driver.driverProfile?.dateOfBirth
+                          ? new Date(driver.driverProfile.dateOfBirth).toLocaleDateString()
+                          : '—'}
+                      </small>
+                    </span>
+                    <span>
+                      {driver.phone}
+                      <br />
+                      <small>{driver.email}</small>
+                      <br />
+                      <small>
+                        ЧС:{' '}
+                        {driver.driverProfile?.emergencyContact?.name
+                          ? `${driver.driverProfile?.emergencyContact?.name} (${
+                              driver.driverProfile?.emergencyContact?.phone ?? '-'
+                            })`
+                          : '—'}
+                      </small>
+                    </span>
+                    <span>
+                      {driver.driverProfile?.licenseNumber ?? '—'}
+                      <br />
+                      <small>{driver.driverProfile?.address ?? ''}</small>
+                    </span>
+                    <span>
+                      {driver.driverDocuments?.[0]
+                        ? `${driver.driverDocuments[0].documentType} #${
+                            driver.driverDocuments[0].documentNumber ?? '-'
+                          }`
+                        : '—'}
+                      <br />
+                      <small>
+                        истекает:{' '}
+                        {driver.driverDocuments?.[0]?.expiresAt
+                          ? new Date(
+                              driver.driverDocuments[0].expiresAt,
+                            ).toLocaleDateString()
+                          : '—'}
+                      </small>
+                    </span>
                     <span class={`badge badge-${driver.status}`}>
                       {renderStatus(driver.status)}
+                      <br />
+                      <small>
+                        {driver.driverStatuses?.[0]?.reason
+                          ? driver.driverStatuses[0].reason
+                          : ''}
+                      </small>
                     </span>
                     <button
                       class="danger"
@@ -220,219 +268,238 @@ const App: Component = () => {
         <div class="modal">
           <h2>Новый водитель</h2>
           <form class="form" onSubmit={handleSubmit}>
-            <label>
-              Имя
-              <input
-                type="text"
-                required
-                value={form().name}
-                onInput={(e) => setForm({ ...form(), name: e.currentTarget.value })}
-              />
-            </label>
+            <div class="form-section">
+              <h3>Основная информация</h3>
+              <div class="form-grid">
+                <label>
+                  Имя
+                  <input
+                    type="text"
+                    required
+                    value={form().name}
+                    onInput={(e) => setForm({ ...form(), name: e.currentTarget.value })}
+                  />
+                </label>
 
-            <label>
-              Телефон
-              <input
-                type="tel"
-                required
-                value={form().phone}
-                onInput={(e) => setForm({ ...form(), phone: e.currentTarget.value })}
-              />
-            </label>
+                <label>
+                  Телефон
+                  <input
+                    type="tel"
+                    required
+                    value={form().phone}
+                    onInput={(e) => setForm({ ...form(), phone: e.currentTarget.value })}
+                  />
+                </label>
 
-            <label>
-              Email
-              <input
-                type="email"
-                required
-                value={form().email}
-                onInput={(e) => setForm({ ...form(), email: e.currentTarget.value })}
-              />
-            </label>
+                <label>
+                  Email
+                  <input
+                    type="email"
+                    required
+                    value={form().email}
+                    onInput={(e) => setForm({ ...form(), email: e.currentTarget.value })}
+                  />
+                </label>
 
-            <label>
-              Номер лицензии
-              <input
-                type="text"
-                required
-                value={form().licenseNumber}
-                onInput={(e) =>
-                  setForm({ ...form(), licenseNumber: e.currentTarget.value })
-                }
-              />
-            </label>
-
-            <label>
-              Дата рождения
-              <input
-                type="date"
-                value={form().dateOfBirth}
-                onInput={(e) =>
-                  setForm({ ...form(), dateOfBirth: e.currentTarget.value })
-                }
-              />
-            </label>
-
-            <label>
-              Адрес
-              <textarea
-                rows={2}
-                value={form().address}
-                onInput={(e) =>
-                  setForm({ ...form(), address: e.currentTarget.value })
-                }
-              />
-            </label>
-
-            <label>
-              Контакт для ЧС
-              <div class="inline-inputs">
-                <input
-                  type="text"
-                  placeholder="Имя"
-                  value={form().emergencyContactName}
-                  onInput={(e) =>
-                    setForm({ ...form(), emergencyContactName: e.currentTarget.value })
-                  }
-                />
-                <input
-                  type="tel"
-                  placeholder="Телефон"
-                  value={form().emergencyContactPhone}
-                  onInput={(e) =>
-                    setForm({
-                      ...form(),
-                      emergencyContactPhone: e.currentTarget.value,
-                    })
-                  }
-                />
+                <label>
+                  Статус
+                  <select
+                    value={form().status}
+                    onChange={(e) =>
+                      setForm({ ...form(), status: e.currentTarget.value as DriverStatus })
+                    }
+                  >
+                    <For each={STATUSES}>
+                      {(option) => (
+                        <option value={option.value}>{option.label}</option>
+                      )}
+                    </For>
+                  </select>
+                </label>
               </div>
-            </label>
-
-            <label>
-              Статус
-              <select
-                value={form().status}
-                onChange={(e) =>
-                  setForm({ ...form(), status: e.currentTarget.value as DriverStatus })
-                }
-              >
-                <For each={STATUSES}>
-                  {(option) => (
-                    <option value={option.value}>{option.label}</option>
-                  )}
-                </For>
-              </select>
-            </label>
-
-            <label class="checkbox">
-              <input
-                type="checkbox"
-                checked={form().notificationsEnabled}
-                onInput={(e) =>
-                  setForm({
-                    ...form(),
-                    notificationsEnabled: e.currentTarget.checked,
-                  })
-                }
-              />
-              Уведомления включены
-            </label>
-
-            <label class="checkbox">
-              <input
-                type="checkbox"
-                checked={form().autoAcceptOrders}
-                onInput={(e) =>
-                  setForm({
-                    ...form(),
-                    autoAcceptOrders: e.currentTarget.checked,
-                  })
-                }
-              />
-              Авто принятие заказов
-            </label>
-
-            <label>
-              Язык интерфейса
-              <input
-                type="text"
-                value={form().preferredLanguage}
-                onInput={(e) =>
-                  setForm({
-                    ...form(),
-                    preferredLanguage: e.currentTarget.value,
-                  })
-                }
-              />
-            </label>
-
-            <label>
-              Тип документа
-              <input
-                type="text"
-                value={form().documentType}
-                onInput={(e) =>
-                  setForm({ ...form(), documentType: e.currentTarget.value })
-                }
-              />
-            </label>
-
-            <label>
-              Номер документа
-              <input
-                type="text"
-                value={form().documentNumber}
-                onInput={(e) =>
-                  setForm({ ...form(), documentNumber: e.currentTarget.value })
-                }
-              />
-            </label>
-
-            <div class="inline-inputs">
-              <label>
-                Дата выдачи
-                <input
-                  type="date"
-                  value={form().documentIssuedAt}
-                  onInput={(e) =>
-                    setForm({ ...form(), documentIssuedAt: e.currentTarget.value })
-                  }
-                />
-              </label>
-              <label>
-                Дата окончания
-                <input
-                  type="date"
-                  value={form().documentExpiresAt}
-                  onInput={(e) =>
-                    setForm({ ...form(), documentExpiresAt: e.currentTarget.value })
-                  }
-                />
-              </label>
             </div>
 
-            <label>
-              Ссылка на файл
-              <input
-                type="url"
-                value={form().documentFileUrl}
-                onInput={(e) =>
-                  setForm({ ...form(), documentFileUrl: e.currentTarget.value })
-                }
-              />
-            </label>
+            <div class="form-section">
+              <h3>Профиль и контакт</h3>
+              <div class="form-grid">
+                <label>
+                  Номер лицензии
+                  <input
+                    type="text"
+                    required
+                    value={form().licenseNumber}
+                    onInput={(e) =>
+                      setForm({ ...form(), licenseNumber: e.currentTarget.value })
+                    }
+                  />
+                </label>
 
-            <label>
-              Комментарий к статусу
-              <input
-                type="text"
-                value={form().statusReason}
-                onInput={(e) =>
-                  setForm({ ...form(), statusReason: e.currentTarget.value })
-                }
-              />
-            </label>
+                <label>
+                  Дата рождения
+                  <input
+                    type="date"
+                    value={form().dateOfBirth}
+                    onInput={(e) =>
+                      setForm({ ...form(), dateOfBirth: e.currentTarget.value })
+                    }
+                  />
+                </label>
+
+                <label class="full-width">
+                  Адрес
+                  <textarea
+                    rows={2}
+                    value={form().address}
+                    onInput={(e) =>
+                      setForm({ ...form(), address: e.currentTarget.value })
+                    }
+                  />
+                </label>
+
+                <label class="full-width">
+                  Контакт для ЧС
+                  <div class="inline-inputs">
+                    <input
+                      type="text"
+                      placeholder="Имя"
+                      value={form().emergencyContactName}
+                      onInput={(e) =>
+                        setForm({ ...form(), emergencyContactName: e.currentTarget.value })
+                      }
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Телефон"
+                      value={form().emergencyContactPhone}
+                      onInput={(e) =>
+                        setForm({
+                          ...form(),
+                          emergencyContactPhone: e.currentTarget.value,
+                        })
+                      }
+                    />
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <h3>Документ</h3>
+              <div class="form-grid">
+                <label>
+                  Тип документа
+                  <input
+                    type="text"
+                    value={form().documentType}
+                    onInput={(e) =>
+                      setForm({ ...form(), documentType: e.currentTarget.value })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Номер документа
+                  <input
+                    type="text"
+                    value={form().documentNumber}
+                    onInput={(e) =>
+                      setForm({ ...form(), documentNumber: e.currentTarget.value })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Дата выдачи
+                  <input
+                    type="date"
+                    value={form().documentIssuedAt}
+                    onInput={(e) =>
+                      setForm({ ...form(), documentIssuedAt: e.currentTarget.value })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Дата окончания
+                  <input
+                    type="date"
+                    value={form().documentExpiresAt}
+                    onInput={(e) =>
+                      setForm({ ...form(), documentExpiresAt: e.currentTarget.value })
+                    }
+                  />
+                </label>
+
+                <label class="full-width">
+                  Ссылка на файл
+                  <input
+                    type="url"
+                    value={form().documentFileUrl}
+                    onInput={(e) =>
+                      setForm({ ...form(), documentFileUrl: e.currentTarget.value })
+                    }
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <h3>Настройки</h3>
+              <div class="form-grid">
+                <label class="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={form().notificationsEnabled}
+                    onInput={(e) =>
+                      setForm({
+                        ...form(),
+                        notificationsEnabled: e.currentTarget.checked,
+                      })
+                    }
+                  />
+                  Уведомления включены
+                </label>
+
+                <label class="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={form().autoAcceptOrders}
+                    onInput={(e) =>
+                      setForm({
+                        ...form(),
+                        autoAcceptOrders: e.currentTarget.checked,
+                      })
+                    }
+                  />
+                  Авто принятие заказов
+                </label>
+
+                <label>
+                  Язык интерфейса
+                  <input
+                    type="text"
+                    value={form().preferredLanguage}
+                    onInput={(e) =>
+                      setForm({
+                        ...form(),
+                        preferredLanguage: e.currentTarget.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label>
+                  Комментарий к статусу
+                  <input
+                    type="text"
+                    value={form().statusReason}
+                    onInput={(e) =>
+                      setForm({ ...form(), statusReason: e.currentTarget.value })
+                    }
+                  />
+                </label>
+              </div>
+            </div>
 
             <Show when={message()}>
               <p class="message success">{message()}</p>

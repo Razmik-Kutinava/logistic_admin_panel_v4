@@ -2,6 +2,39 @@ const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 
 export type DriverStatus = 'active' | 'inactive' | 'on_shift';
 
+export interface DriverProfile {
+  licenseNumber: string;
+  dateOfBirth?: string;
+  address?: string;
+  emergencyContact?: {
+    name?: string;
+    phone?: string;
+  };
+}
+
+export interface DriverSettings {
+  notificationsEnabled: boolean;
+  autoAcceptOrders: boolean;
+  preferredLanguage?: string;
+}
+
+export interface DriverDocument {
+  id: string;
+  documentType: string;
+  documentNumber?: string;
+  issuedAt?: string;
+  expiresAt?: string;
+  fileUrl?: string;
+  createdAt: string;
+}
+
+export interface DriverStatusSnapshot {
+  id: string;
+  status: DriverStatus;
+  reason?: string;
+  effectiveAt: string;
+}
+
 export interface Driver {
   id: string;
   name: string;
@@ -9,6 +42,10 @@ export interface Driver {
   email: string;
   status: DriverStatus;
   createdAt: string;
+  driverProfile?: DriverProfile;
+  driverSettings?: DriverSettings;
+  driverDocuments?: DriverDocument[];
+  driverStatuses?: DriverStatusSnapshot[];
 }
 
 export interface CreateDriverPayload {

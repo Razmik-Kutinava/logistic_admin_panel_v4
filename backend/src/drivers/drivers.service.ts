@@ -10,6 +10,22 @@ import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { Driver, Prisma } from '@prisma/client';
 import { DRIVER_STATUS, DriverStatusValue } from './driver-status.enum';
 
+const driverInclude = {
+  driverProfile: true,
+  driverSettings: true,
+  driverDocuments: {
+    orderBy: {
+      createdAt: 'desc' as const,
+    },
+  },
+  driverStatuses: {
+    orderBy: {
+      effectiveAt: 'desc' as const,
+    },
+    take: 1,
+  },
+};
+
 @Injectable()
 export class DriversService {
   constructor(private prisma: PrismaService) {}
@@ -81,7 +97,16 @@ export class DriversService {
           });
         }
 
-        return driverRecord;
+        const fullDriver = await tx.driver.findUnique({
+          where: { id: driverRecord.id },
+          include: driverInclude,
+        });
+
+        if (!fullDriver) {
+          throw new Error('Driver was not found after creation');
+        }
+
+        return fullDriver;
       });
 
       return driver;
@@ -101,12 +126,14 @@ export class DriversService {
     return this.prisma.driver.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      include: driverInclude,
     });
   }
 
   async findOne(id: string): Promise<Driver> {
     const driver = await this.prisma.driver.findUnique({
       where: { id },
+      include: driverInclude,
     });
 
     if (!driver) {
@@ -129,6 +156,7 @@ export class DriversService {
       return await this.prisma.driver.update({
         where: { id },
         data,
+        include: driverInclude,
       });
     } catch (error) {
       if (error.code === 'P2002') {
@@ -149,6 +177,7 @@ export class DriversService {
       data: {
         status: updateStatusDto.status as Prisma.DriverUncheckedUpdateInput['status'],
       },
+      include: driverInclude,
     });
   }
 
