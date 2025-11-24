@@ -167,58 +167,140 @@ export class DriversService {
       const existing = byPhone || byEmail || byLicense;
 
       if (existing) {
-        // Определяем, какие поля можно безопасно обновить
-        const canUpdatePhone = !byPhone || byPhone.id === existing.id;
-        const canUpdateEmail = !byEmail || byEmail.id === existing.id;
-
         const updateData: Prisma.DriverUncheckedUpdateInput = {
           name: dto.name,
           status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
         };
 
-        // Обновляем phone только если он не занят другим водителем
-        if (canUpdatePhone) {
+        // Phone можно обновить только если:
+        // - Он не занят другим водителем (byPhone === null или byPhone.id === existing.id)
+        // - И он отличается от текущего значения
+        if (
+          (!byPhone || byPhone.id === existing.id) &&
+          existing.phone !== dto.phone
+        ) {
           updateData.phone = dto.phone;
         }
 
-        // Обновляем email только если он не занят другим водителем
-        if (canUpdateEmail) {
+        // Email можно обновить только если:
+        // - Он не занят другим водителем (byEmail === null или byEmail.id === existing.id)
+        // - И он отличается от текущего значения
+        if (
+          (!byEmail || byEmail.id === existing.id) &&
+          existing.email !== dto.email
+        ) {
           updateData.email = dto.email;
         }
 
-        const updatedDriver = await tx.driver.update({
-          where: { id: existing.id },
-          data: updateData,
+        try {
+          const updatedDriver = await tx.driver.update({
+            where: { id: existing.id },
+            data: updateData,
+          });
+
+          await this.upsertDriverRelations(
+            tx,
+            updatedDriver.id,
+            dto,
+            (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+          );
+
+          return this.loadDriver(tx, updatedDriver.id);
+        } catch (updateError: any) {
+          // Если все же получили конфликт при обновлении - обновляем без phone/email
+          if (updateError.code === 'P2002') {
+            const safeUpdateData: Prisma.DriverUncheckedUpdateInput = {
+              name: dto.name,
+              status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+              // НЕ обновляем phone и email, если они конфликтуют
+            };
+
+            const updatedDriver = await tx.driver.update({
+              where: { id: existing.id },
+              data: safeUpdateData,
+            });
+
+            await this.upsertDriverRelations(
+              tx,
+              updatedDriver.id,
+              dto,
+              (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+            );
+
+            return this.loadDriver(tx, updatedDriver.id);
+          }
+          throw updateError;
+        }
+      }
+
+      // Создаем нового водителя
+      // Если между проверкой и созданием появился конфликт - обрабатываем его
+      try {
+        const newDriver = await tx.driver.create({
+          data: {
+            name: dto.name,
+            phone: dto.phone,
+            email: dto.email,
+            status: dto.status ?? DRIVER_STATUS.ACTIVE,
+          },
         });
 
         await this.upsertDriverRelations(
           tx,
-          updatedDriver.id,
+          newDriver.id,
           dto,
-          (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+          (newDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
         );
 
-        return this.loadDriver(tx, updatedDriver.id);
+        return this.loadDriver(tx, newDriver.id);
+      } catch (createError: any) {
+        // Если получили конфликт при создании - повторно проверяем и обновляем
+        if (createError.code === 'P2002') {
+          const [retryByPhone, retryByEmail] = await Promise.all([
+            tx.driver.findUnique({ where: { phone: dto.phone } }),
+            tx.driver.findUnique({ where: { email: dto.email } }),
+          ]);
+
+          const retryExisting = retryByPhone || retryByEmail;
+          if (!retryExisting) {
+            throw new ConflictException('Водитель с такими данными уже существует');
+          }
+
+          const updateData: Prisma.DriverUncheckedUpdateInput = {
+            name: dto.name,
+            status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+          };
+
+          if (
+            (!retryByPhone || retryByPhone.id === retryExisting.id) &&
+            retryExisting.phone !== dto.phone
+          ) {
+            updateData.phone = dto.phone;
+          }
+
+          if (
+            (!retryByEmail || retryByEmail.id === retryExisting.id) &&
+            retryExisting.email !== dto.email
+          ) {
+            updateData.email = dto.email;
+          }
+
+          const updatedDriver = await tx.driver.update({
+            where: { id: retryExisting.id },
+            data: updateData,
+          });
+
+          await this.upsertDriverRelations(
+            tx,
+            updatedDriver.id,
+            dto,
+            (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+          );
+
+          return this.loadDriver(tx, updatedDriver.id);
+        }
+        throw createError;
       }
-
-      // Создаем нового водителя
-      const newDriver = await tx.driver.create({
-        data: {
-          name: dto.name,
-          phone: dto.phone,
-          email: dto.email,
-          status: dto.status ?? DRIVER_STATUS.ACTIVE,
-        },
-      });
-
-      await this.upsertDriverRelations(
-        tx,
-        newDriver.id,
-        dto,
-        (newDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
-      );
-
-      return this.loadDriver(tx, newDriver.id);
     });
   }
 
