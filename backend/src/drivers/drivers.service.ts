@@ -147,6 +147,58 @@ export class DriversService {
   }
 
   async create(dto: CreateDriverDto): Promise<Driver> {
+    // Сначала проверяем, существует ли водитель
+    const existing = await this.findExistingDriver(dto);
+
+    if (existing) {
+      // Если водитель найден - обновляем его
+      return await this.prisma.$transaction(async (tx) => {
+        // Обновляем только те поля, которые не конфликтуют
+        const updateData: Prisma.DriverUncheckedUpdateInput = {
+          name: dto.name,
+          status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+        };
+
+        // Обновляем phone/email только если они не заняты другим водителем
+        if (dto.phone !== existing.phone) {
+          const phoneConflict = await tx.driver.findUnique({
+            where: { phone: dto.phone },
+          });
+          if (!phoneConflict) {
+            updateData.phone = dto.phone;
+          }
+        } else {
+          updateData.phone = dto.phone;
+        }
+
+        if (dto.email !== existing.email) {
+          const emailConflict = await tx.driver.findUnique({
+            where: { email: dto.email },
+          });
+          if (!emailConflict) {
+            updateData.email = dto.email;
+          }
+        } else {
+          updateData.email = dto.email;
+        }
+
+        const updatedDriver = await tx.driver.update({
+          where: { id: existing.id },
+          data: updateData,
+        });
+
+        await this.upsertDriverRelations(
+          tx,
+          updatedDriver.id,
+          dto,
+          (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+        );
+
+        return this.loadDriver(tx, updatedDriver.id);
+      });
+    }
+
+    // Если водитель не найден - создаем нового
     try {
       const driver = await this.prisma.$transaction(async (tx) => {
         const driverRecord = await tx.driver.create({
@@ -171,34 +223,55 @@ export class DriversService {
       return driver;
     } catch (error: any) {
       if (error.code === 'P2002') {
-        const existing = await this.findExistingDriver(dto);
-
-        if (!existing) {
-          throw new ConflictException('Водитель с такими данными уже существует');
-        }
-
-        const restored = await this.prisma.$transaction(async (tx) => {
-          const updatedDriver = await tx.driver.update({
-            where: { id: existing.id },
-            data: {
+        // Если все же получили конфликт - пробуем найти и обновить
+        const found = await this.findExistingDriver(dto);
+        if (found) {
+          // Обновляем найденного водителя без изменения phone/email если они конфликтуют
+          return await this.prisma.$transaction(async (tx) => {
+            const updateData: Prisma.DriverUncheckedUpdateInput = {
               name: dto.name,
-              phone: dto.phone,
-              email: dto.email,
-              status: dto.status ?? DRIVER_STATUS.ACTIVE,
-            },
+              status: (dto.status ?? DRIVER_STATUS.ACTIVE) as string,
+            };
+
+            // Проверяем конфликты перед обновлением
+            if (dto.phone !== found.phone) {
+              const phoneConflict = await tx.driver.findUnique({
+                where: { phone: dto.phone },
+              });
+              if (!phoneConflict) {
+                updateData.phone = dto.phone;
+              }
+            } else {
+              updateData.phone = dto.phone;
+            }
+
+            if (dto.email !== found.email) {
+              const emailConflict = await tx.driver.findUnique({
+                where: { email: dto.email },
+              });
+              if (!emailConflict) {
+                updateData.email = dto.email;
+              }
+            } else {
+              updateData.email = dto.email;
+            }
+
+            const updatedDriver = await tx.driver.update({
+              where: { id: found.id },
+              data: updateData,
+            });
+
+            await this.upsertDriverRelations(
+              tx,
+              updatedDriver.id,
+              dto,
+              (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+            );
+
+            return this.loadDriver(tx, updatedDriver.id);
           });
-
-          await this.upsertDriverRelations(
-            tx,
-            updatedDriver.id,
-            dto,
-            (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
-          );
-
-          return this.loadDriver(tx, updatedDriver.id);
-        });
-
-        return restored;
+        }
+        throw new ConflictException('Водитель с такими данными уже существует');
       }
       throw error;
     }
