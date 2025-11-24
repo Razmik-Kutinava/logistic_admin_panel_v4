@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Driver {
+  id         String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String            @db.VarChar(255)
+  phone      String            @unique @db.VarChar(20)
+  email      String            @unique @db.VarChar(255)
+  status     String            @default("active") @db.VarChar(50)
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  devices    Device[]
+  statusLogs DriverStatusLog[]
+  gpsLogs    GpsLog[]
+  shifts     Shift[]
+
+  @@index([status], map: "idx_drivers_status")
+  @@index([createdAt(sort: Desc)], map: "idx_drivers_created")
+  @@map("drivers")
+}
+
+model DriverStatusLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId  String   @map("driver_id") @db.Uuid
+  status    String   @db.VarChar(50)
+  timestamp DateTime @default(now()) @db.Timestamptz(6)
+  reason    String?  @db.VarChar(255)
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([driverId], map: "idx_driver_status_logs_driver")
+  @@index([timestamp(sort: Desc)], map: "idx_driver_status_logs_timestamp")
+  @@map("driver_status_logs")
+}
+
+model GpsLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId  String   @map("driver_id") @db.Uuid
+  latitude  Decimal  @db.Decimal(10, 8)
+  longitude Decimal  @db.Decimal(11, 8)
+  speed     Float?
+  accuracy  Float?
+  timestamp DateTime @default(now()) @db.Timestamptz(6)
+  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([driverId, timestamp(sort: Desc)], map: "idx_gps_logs_driver_time")
+  @@index([timestamp(sort: Desc)], map: "idx_gps_logs_timestamp")
+  @@map("gps_logs")
+}
+
+model Shift {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId        String    @map("driver_id") @db.Uuid
+  startTime       DateTime  @map("start_time") @db.Timestamptz(6)
+  endTime         DateTime? @map("end_time") @db.Timestamptz(6)
+  status          String    @default("active") @db.VarChar(50)
+  ordersCompleted Int       @default(0) @map("orders_completed")
+  distanceKm      Float?    @map("distance_km")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  driver          Driver    @relation(fields: [driverId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([driverId], map: "idx_shifts_driver")
+  @@index([status], map: "idx_shifts_status")
+  @@index([createdAt(sort: Desc)], map: "idx_shifts_created")
+  @@map("shifts")
+}
+
+model Device {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driverId     String?  @map("driver_id") @db.Uuid
+  deviceType   String?  @map("device_type") @db.VarChar(50)
+  model        String?  @db.VarChar(100)
+  serialNumber String?  @unique @map("serial_number") @db.VarChar(255)
+  pushToken    String?  @map("push_token") @db.VarChar(500)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  driver       Driver?  @relation(fields: [driverId], references: [id], onUpdate: NoAction)
+
+  @@index([driverId], map: "idx_devices_driver")
+  @@map("devices")
+}
