@@ -60,7 +60,21 @@ const App: Component = () => {
     setMessage(null);
     setError(null);
     try {
-      await createDriver(form());
+      const payload = {
+        ...form(),
+        dateOfBirth: form().dateOfBirth || undefined,
+        address: form().address || undefined,
+        emergencyContactName: form().emergencyContactName || undefined,
+        emergencyContactPhone: form().emergencyContactPhone || undefined,
+        documentType: form().documentType || undefined,
+        documentNumber: form().documentNumber || undefined,
+        documentIssuedAt: form().documentIssuedAt || undefined,
+        documentExpiresAt: form().documentExpiresAt || undefined,
+        documentFileUrl: form().documentFileUrl || undefined,
+        statusReason: form().statusReason || undefined,
+      };
+
+      await createDriver(payload);
       setMessage('Водитель успешно создан');
       setIsFormOpen(false);
       resetForm();
