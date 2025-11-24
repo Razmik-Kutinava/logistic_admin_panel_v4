@@ -30,101 +30,162 @@ const driverInclude = {
 export class DriversService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createDriverDto: CreateDriverDto): Promise<Driver> {
+  private toDate(value?: string) {
+    return value ? new Date(value) : undefined;
+  }
+
+  private buildEmergencyContact(dto: CreateDriverDto) {
+    if (!dto.emergencyContactName && !dto.emergencyContactPhone) {
+      return undefined;
+    }
+    return {
+      name: dto.emergencyContactName,
+      phone: dto.emergencyContactPhone,
+    };
+  }
+
+  private async upsertDriverRelations(
+    tx: Prisma.TransactionClient,
+    driverId: string,
+    dto: CreateDriverDto,
+    status: DriverStatusValue,
+  ) {
+    await tx.driverProfile.upsert({
+      where: { driverId },
+      update: {
+        licenseNumber: dto.licenseNumber,
+        dateOfBirth: this.toDate(dto.dateOfBirth),
+        address: dto.address,
+        emergencyContact: this.buildEmergencyContact(dto),
+      },
+      create: {
+        driverId,
+        licenseNumber: dto.licenseNumber,
+        dateOfBirth: this.toDate(dto.dateOfBirth),
+        address: dto.address,
+        emergencyContact: this.buildEmergencyContact(dto),
+      },
+    });
+
+    await tx.driverSettings.upsert({
+      where: { driverId },
+      update: {
+        notificationsEnabled: dto.notificationsEnabled ?? true,
+        autoAcceptOrders: dto.autoAcceptOrders ?? false,
+        preferredLanguage: dto.preferredLanguage ?? 'ru',
+      },
+      create: {
+        driverId,
+        notificationsEnabled: dto.notificationsEnabled ?? true,
+        autoAcceptOrders: dto.autoAcceptOrders ?? false,
+        preferredLanguage: dto.preferredLanguage ?? 'ru',
+      },
+    });
+
+    await tx.driverStatusSnapshot.create({
+      data: {
+        driverId,
+        status,
+        reason: dto.statusReason,
+        effectiveAt: new Date(),
+      },
+    });
+
+    if (dto.documentType) {
+      await tx.driverDocument.create({
+        data: {
+          driverId,
+          documentType: dto.documentType,
+          documentNumber: dto.documentNumber,
+          issuedAt: this.toDate(dto.documentIssuedAt),
+          expiresAt: this.toDate(dto.documentExpiresAt),
+          fileUrl: dto.documentFileUrl,
+        },
+      });
+    }
+  }
+
+  private async loadDriver(
+    tx: Prisma.TransactionClient,
+    id: string,
+  ): Promise<Driver> {
+    const driver = await tx.driver.findUnique({
+      where: { id },
+      include: driverInclude,
+    });
+
+    if (!driver) {
+      throw new Error('Driver not found');
+    }
+
+    return driver;
+  }
+
+  async create(dto: CreateDriverDto): Promise<Driver> {
     try {
       const driver = await this.prisma.$transaction(async (tx) => {
         const driverRecord = await tx.driver.create({
           data: {
-            name: createDriverDto.name,
-            phone: createDriverDto.phone,
-            email: createDriverDto.email,
-            status: createDriverDto.status ?? DRIVER_STATUS.ACTIVE,
+            name: dto.name,
+            phone: dto.phone,
+            email: dto.email,
+            status: dto.status ?? DRIVER_STATUS.ACTIVE,
           },
         });
 
-        await tx.driverProfile.create({
-          data: {
-            driverId: driverRecord.id,
-            licenseNumber: createDriverDto.licenseNumber,
-            dateOfBirth: createDriverDto.dateOfBirth
-              ? new Date(createDriverDto.dateOfBirth)
-              : undefined,
-            address: createDriverDto.address,
-            emergencyContact:
-              createDriverDto.emergencyContactName ||
-              createDriverDto.emergencyContactPhone
-                ? {
-                    name: createDriverDto.emergencyContactName,
-                    phone: createDriverDto.emergencyContactPhone,
-                  }
-                : undefined,
-          },
-        });
+        await this.upsertDriverRelations(
+          tx,
+          driverRecord.id,
+          dto,
+          (driverRecord.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+        );
 
-        await tx.driverSettings.create({
-          data: {
-            driverId: driverRecord.id,
-            notificationsEnabled:
-              createDriverDto.notificationsEnabled ?? true,
-            autoAcceptOrders: createDriverDto.autoAcceptOrders ?? false,
-            preferredLanguage: createDriverDto.preferredLanguage ?? 'ru',
-          },
-        });
-
-        await tx.driverStatusSnapshot.create({
-          data: {
-            driverId: driverRecord.id,
-            status: driverRecord.status,
-            reason: createDriverDto.statusReason,
-            effectiveAt: new Date(),
-          },
-        });
-
-        if (createDriverDto.documentType) {
-          await tx.driverDocument.create({
-            data: {
-              driverId: driverRecord.id,
-              documentType: createDriverDto.documentType,
-              documentNumber: createDriverDto.documentNumber,
-              issuedAt: createDriverDto.documentIssuedAt
-                ? new Date(createDriverDto.documentIssuedAt)
-                : undefined,
-              expiresAt: createDriverDto.documentExpiresAt
-                ? new Date(createDriverDto.documentExpiresAt)
-                : undefined,
-              fileUrl: createDriverDto.documentFileUrl,
-            },
-          });
-        }
-
-        const fullDriver = await tx.driver.findUnique({
-          where: { id: driverRecord.id },
-          include: driverInclude,
-        });
-
-        if (!fullDriver) {
-          throw new Error('Driver was not found after creation');
-        }
-
-        return fullDriver;
+        return this.loadDriver(tx, driverRecord.id);
       });
 
       return driver;
-    } catch (error) {
+    } catch (error: any) {
       if (error.code === 'P2002') {
-        throw new ConflictException('Водитель с такими данными уже существует');
+        const existing = await this.prisma.driver.findFirst({
+          where: {
+            OR: [{ phone: dto.phone }, { email: dto.email }],
+          },
+        });
+
+        if (!existing) {
+          throw new ConflictException('Водитель с такими данными уже существует');
+        }
+
+        const restored = await this.prisma.$transaction(async (tx) => {
+          const updatedDriver = await tx.driver.update({
+            where: { id: existing.id },
+            data: {
+              name: dto.name,
+              phone: dto.phone,
+              email: dto.email,
+              status: dto.status ?? DRIVER_STATUS.ACTIVE,
+            },
+          });
+
+          await this.upsertDriverRelations(
+            tx,
+            updatedDriver.id,
+            dto,
+            (updatedDriver.status as DriverStatusValue) ?? DRIVER_STATUS.ACTIVE,
+          );
+
+          return this.loadDriver(tx, updatedDriver.id);
+        });
+
+        return restored;
       }
       throw error;
     }
   }
 
   async findAll(status?: DriverStatusValue): Promise<Driver[]> {
-    const where: Prisma.DriverWhereInput | undefined = status
-      ? ({ status: status as unknown as string } as Prisma.DriverWhereInput)
-      : undefined;
-
     return this.prisma.driver.findMany({
-      where,
+      where: status ? { status } : undefined,
       orderBy: { createdAt: 'desc' },
       include: driverInclude,
     });
