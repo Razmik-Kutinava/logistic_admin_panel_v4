@@ -16,7 +16,7 @@ import { DriversService } from './drivers.service';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
-import { DRIVER_STATUS, DriverStatusValue } from './driver-status.enum';
+import { DRIVER_STATUS, DRIVER_STATUS_VALUES, DriverStatusValue } from './driver-status.enum';
 
 @Controller('drivers')
 export class DriversController {
@@ -30,7 +30,7 @@ export class DriversController {
 
   @Get()
   findAll(
-    @Query('status', new ParseEnumPipe(DRIVER_STATUS, { optional: true }))
+    @Query('status', new ParseEnumPipe(DRIVER_STATUS_VALUES, { optional: true }))
     status?: DriverStatusValue,
   ) {
     return this.driversService.findAll(status);

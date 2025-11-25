@@ -1,548 +1,77 @@
-import { Component, For, Show, createResource, createSignal } from 'solid-js';
-import {
-  Driver,
-  DriverStatus,
-  createDriver,
-  deleteDriver,
-  getDrivers,
-  getMetrics,
-} from './lib/api';
+import { Component, createSignal, For } from 'solid-js';
+import Dashboard from './components/Dashboard';
+import Drivers from './components/Drivers';
+import Orders from './components/Orders';
+import Zones from './components/Zones';
+import Shifts from './components/Shifts';
+import Alerts from './components/Alerts';
 
-const STATUSES: { label: string; value: DriverStatus }[] = [
-  { label: 'Активный', value: 'active' },
-  { label: 'Неактивный', value: 'inactive' },
-  { label: 'В рейсе', value: 'on_shift' },
-];
-
-const initialFormState = {
-  name: '',
-  phone: '',
-  email: '',
-  status: 'active' as DriverStatus,
-  licenseNumber: '',
-  dateOfBirth: '',
-  address: '',
-  emergencyContactName: '',
-  emergencyContactPhone: '',
-  notificationsEnabled: true,
-  autoAcceptOrders: false,
-  preferredLanguage: 'ru',
-  documentType: '',
-  documentNumber: '',
-  documentIssuedAt: '',
-  documentExpiresAt: '',
-  documentFileUrl: '',
-  statusReason: '',
-};
+type Page = 'dashboard' | 'drivers' | 'orders' | 'zones' | 'shifts' | 'alerts';
 
 const App: Component = () => {
-  const [isFormOpen, setIsFormOpen] = createSignal(false);
-  const [form, setForm] = createSignal(initialFormState);
-  const [isSubmitting, setIsSubmitting] = createSignal(false);
-  const [message, setMessage] = createSignal<string | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
-  const [deleteError, setDeleteError] = createSignal<string | null>(null);
-  const [deleteLoadingId, setDeleteLoadingId] = createSignal<string | null>(null);
+  const [currentPage, setCurrentPage] = createSignal<Page>('dashboard');
 
-  const [drivers, { refetch }] = createResource(getDrivers);
-  const [metrics, { refetch: refetchMetrics }] = createResource(getMetrics);
-
-  const apiUnavailable = () =>
-    drivers.error || metrics.error
-      ? 'API недоступно. Проверьте, запущен ли backend (npm run dev в папке backend).'
-      : null;
-
-  const resetForm = () => setForm(initialFormState);
-
-  const handleSubmit = async (evt: Event) => {
-    evt.preventDefault();
-    setIsSubmitting(true);
-    setMessage(null);
-    setError(null);
-    try {
-      const payload = {
-        ...form(),
-        dateOfBirth: form().dateOfBirth || undefined,
-        address: form().address || undefined,
-        emergencyContactName: form().emergencyContactName || undefined,
-        emergencyContactPhone: form().emergencyContactPhone || undefined,
-        documentType: form().documentType || undefined,
-        documentNumber: form().documentNumber || undefined,
-        documentIssuedAt: form().documentIssuedAt || undefined,
-        documentExpiresAt: form().documentExpiresAt || undefined,
-        documentFileUrl: form().documentFileUrl || undefined,
-        statusReason: form().statusReason || undefined,
-      };
-
-      await createDriver(payload);
-      setMessage('Водитель успешно создан');
-      setIsFormOpen(false);
-      resetForm();
-      await Promise.all([refetch(), refetchMetrics()]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Не удалось создать водителя');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const renderStatus = (status: DriverStatus) => {
-    switch (status) {
-      case 'active':
-        return 'Активный';
-      case 'inactive':
-        return 'Неактивный';
-      case 'on_shift':
-        return 'В рейсе';
-      default:
-        return status;
-    }
-  };
+  const navItems: { id: Page; label: string }[] = [
+    { id: 'dashboard', label: 'Панель управления' },
+    { id: 'drivers', label: 'Водители' },
+    { id: 'orders', label: 'Заказы' },
+    { id: 'zones', label: 'Зоны' },
+    { id: 'shifts', label: 'Смены' },
+    { id: 'alerts', label: 'Алерты' },
+  ];
 
   return (
-    <main class="page">
-      <header class="header">
-        <div>
-          <h1>Водители</h1>
-          <p>Управление водителями и создание новых профилей</p>
-        </div>
-        <button class="primary" onClick={() => setIsFormOpen(true)}>
-          + Добавить водителя
-        </button>
-      </header>
-
-      <Show when={apiUnavailable()}>
-        {(msg) => <p class="message error">{msg()}</p>}
-      </Show>
-
-      <section class="metrics-card card">
-        <h2>Панель доменов</h2>
-        <Show
-          when={!metrics.loading && !metrics.error}
-          fallback={<p>{metrics.loading ? 'Загрузка метрик...' : 'API недоступно'}</p>}
-        >
-          <div class="metrics-grid">
-            <div class="metric">
-              <span>Водители</span>
-              <strong>{metrics()?.drivers ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>Зоны</span>
-              <strong>{metrics()?.zones ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>Заказы</span>
-              <strong>{metrics()?.orders ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>Маршруты</span>
-              <strong>{metrics()?.routes ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>Смены</span>
-              <strong>{metrics()?.shifts ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>Устройства</span>
-              <strong>{metrics()?.devices ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>Документы</span>
-              <strong>{metrics()?.documents ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>Алерты</span>
-              <strong>{metrics()?.alerts ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>System Logs</span>
-              <strong>{metrics()?.logs.systemLogs ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>API Logs</span>
-              <strong>{metrics()?.logs.apiLogs ?? 0}</strong>
-            </div>
-            <div class="metric">
-              <span>App Errors</span>
-              <strong>{metrics()?.logs.appErrors ?? 0}</strong>
-            </div>
-          </div>
-        </Show>
-      </section>
-
-      <section class="card">
-        <Show
-          when={!drivers.loading && !drivers.error}
-          fallback={<p>{drivers.loading ? 'Загрузка...' : 'API недоступно'}</p>}
-        >
-          <Show
-            when={drivers()?.length}
-            fallback={<p>Пока нет водителей. Создайте первого.</p>}
-          >
-            <div class="table">
-              <div class="table-header">
-                <span>Имя</span>
-                <span>Контакты</span>
-                <span>Лицензия</span>
-                <span>Документ</span>
-                <span>Статус</span>
-                <span />
-              </div>
-              <For each={drivers() as Driver[]}>
-                {(driver) => (
-                  <div class="table-row">
-                    <span>
-                      {driver.name}
-                      <br />
-                      <small>
-                        {driver.driverProfile?.dateOfBirth
-                          ? new Date(driver.driverProfile.dateOfBirth).toLocaleDateString()
-                          : '—'}
-                      </small>
-                    </span>
-                    <span>
-                      {driver.phone}
-                      <br />
-                      <small>{driver.email}</small>
-                      <br />
-                      <small>
-                        ЧС:{' '}
-                        {driver.driverProfile?.emergencyContact?.name
-                          ? `${driver.driverProfile?.emergencyContact?.name} (${
-                              driver.driverProfile?.emergencyContact?.phone ?? '-'
-                            })`
-                          : '—'}
-                      </small>
-                    </span>
-                    <span>
-                      {driver.driverProfile?.licenseNumber ?? '—'}
-                      <br />
-                      <small>{driver.driverProfile?.address ?? ''}</small>
-                    </span>
-                    <span>
-                      {driver.driverDocuments?.[0]
-                        ? `${driver.driverDocuments[0].documentType} #${
-                            driver.driverDocuments[0].documentNumber ?? '-'
-                          }`
-                        : '—'}
-                      <br />
-                      <small>
-                        истекает:{' '}
-                        {driver.driverDocuments?.[0]?.expiresAt
-                          ? new Date(
-                              driver.driverDocuments[0].expiresAt,
-                            ).toLocaleDateString()
-                          : '—'}
-                      </small>
-                    </span>
-                    <span class={`badge badge-${driver.status}`}>
-                      {renderStatus(driver.status)}
-                      <br />
-                      <small>
-                        {driver.driverStatuses?.[0]?.reason
-                          ? driver.driverStatuses[0].reason
-                          : ''}
-                      </small>
-                    </span>
-                    <button
-                      class="danger"
-                      disabled={deleteLoadingId() === driver.id}
-                      onClick={async () => {
-                        setDeleteError(null);
-                        setDeleteLoadingId(driver.id);
-                        try {
-                          await deleteDriver(driver.id);
-                          await Promise.all([refetch(), refetchMetrics()]);
-                        } catch (err) {
-                          setDeleteError(
-                            err instanceof Error
-                              ? err.message
-                              : 'Ошибка при удалении',
-                          );
-                        } finally {
-                          setDeleteLoadingId(null);
-                        }
-                      }}
-                    >
-                      {deleteLoadingId() === driver.id ? 'Удаление...' : 'Удалить'}
-                    </button>
-                  </div>
-                )}
-              </For>
-            </div>
-            <Show when={deleteError()}>
-              <p class="message error">{deleteError()}</p>
-            </Show>
-          </Show>
-        </Show>
-      </section>
-
-      <Show when={isFormOpen()}>
-        <div class="modal-backdrop" onClick={() => setIsFormOpen(false)} />
-        <div class="modal">
-          <h2>Новый водитель</h2>
-          <form class="form" onSubmit={handleSubmit}>
-            <div class="form-section">
-              <h3>Основная информация</h3>
-              <div class="form-grid">
-                <label>
-                  Имя
-                  <input
-                    type="text"
-                    required
-                    value={form().name}
-                    onInput={(e) => setForm({ ...form(), name: e.currentTarget.value })}
-                  />
-                </label>
-
-                <label>
-                  Телефон
-                  <input
-                    type="tel"
-                    required
-                    value={form().phone}
-                    onInput={(e) => setForm({ ...form(), phone: e.currentTarget.value })}
-                  />
-                </label>
-
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    required
-                    value={form().email}
-                    onInput={(e) => setForm({ ...form(), email: e.currentTarget.value })}
-                  />
-                </label>
-
-                <label>
-                  Статус
-                  <select
-                    value={form().status}
-                    onChange={(e) =>
-                      setForm({ ...form(), status: e.currentTarget.value as DriverStatus })
+    <div style={{ display: 'flex', 'min-height': '100vh' }}>
+      <nav style={{ width: '250px', background: '#1e293b', color: 'white', padding: '1.5rem' }}>
+        <h1 style={{ margin: '0 0 2rem 0', 'font-size': '1.5rem', 'font-weight': '600' }}>
+          Логистика
+        </h1>
+        <ul style={{ 'list-style': 'none', padding: '0', margin: '0' }}>
+          <For each={navItems}>
+            {(item) => (
+              <li>
+                <button
+                  onClick={() => setCurrentPage(item.id)}
+                  style={{
+                    width: '100%',
+                    'text-align': 'left',
+                    padding: '0.75rem 1rem',
+                    margin: '0.25rem 0',
+                    border: 'none',
+                    background: currentPage() === item.id ? '#3b82f6' : 'transparent',
+                    color: 'white',
+                    cursor: 'pointer',
+                    'border-radius': '0.5rem',
+                    transition: 'background 0.2s',
+                  }}
+                  onMouseOver={(e: MouseEvent) => {
+                    if (currentPage() !== item.id) {
+                      (e.currentTarget as HTMLButtonElement).style.background = '#334155';
                     }
-                  >
-                    <For each={STATUSES}>
-                      {(option) => (
-                        <option value={option.value}>{option.label}</option>
-                      )}
-                    </For>
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-section">
-              <h3>Профиль и контакт</h3>
-              <div class="form-grid">
-                <label>
-                  Номер лицензии
-                  <input
-                    type="text"
-                    required
-                    value={form().licenseNumber}
-                    onInput={(e) =>
-                      setForm({ ...form(), licenseNumber: e.currentTarget.value })
+                  }}
+                  onMouseOut={(e: MouseEvent) => {
+                    if (currentPage() !== item.id) {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
                     }
-                  />
-                </label>
+                  }}
+                >
+                  {item.label}
+                </button>
+              </li>
+            )}
+          </For>
+        </ul>
+      </nav>
 
-                <label>
-                  Дата рождения
-                  <input
-                    type="date"
-                    value={form().dateOfBirth}
-                    onInput={(e) =>
-                      setForm({ ...form(), dateOfBirth: e.currentTarget.value })
-                    }
-                  />
-                </label>
-
-                <label class="full-width">
-                  Адрес
-                  <textarea
-                    rows={2}
-                    value={form().address}
-                    onInput={(e) =>
-                      setForm({ ...form(), address: e.currentTarget.value })
-                    }
-                  />
-                </label>
-
-                <label class="full-width">
-                  Контакт для ЧС
-                  <div class="inline-inputs">
-                    <input
-                      type="text"
-                      placeholder="Имя"
-                      value={form().emergencyContactName}
-                      onInput={(e) =>
-                        setForm({ ...form(), emergencyContactName: e.currentTarget.value })
-                      }
-                    />
-                    <input
-                      type="tel"
-                      placeholder="Телефон"
-                      value={form().emergencyContactPhone}
-                      onInput={(e) =>
-                        setForm({
-                          ...form(),
-                          emergencyContactPhone: e.currentTarget.value,
-                        })
-                      }
-                    />
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            <div class="form-section">
-              <h3>Документ</h3>
-              <div class="form-grid">
-                <label>
-                  Тип документа
-                  <input
-                    type="text"
-                    value={form().documentType}
-                    onInput={(e) =>
-                      setForm({ ...form(), documentType: e.currentTarget.value })
-                    }
-                  />
-                </label>
-
-                <label>
-                  Номер документа
-                  <input
-                    type="text"
-                    value={form().documentNumber}
-                    onInput={(e) =>
-                      setForm({ ...form(), documentNumber: e.currentTarget.value })
-                    }
-                  />
-                </label>
-
-                <label>
-                  Дата выдачи
-                  <input
-                    type="date"
-                    value={form().documentIssuedAt}
-                    onInput={(e) =>
-                      setForm({ ...form(), documentIssuedAt: e.currentTarget.value })
-                    }
-                  />
-                </label>
-
-                <label>
-                  Дата окончания
-                  <input
-                    type="date"
-                    value={form().documentExpiresAt}
-                    onInput={(e) =>
-                      setForm({ ...form(), documentExpiresAt: e.currentTarget.value })
-                    }
-                  />
-                </label>
-
-                <label class="full-width">
-                  Ссылка на файл
-                  <input
-                    type="url"
-                    value={form().documentFileUrl}
-                    onInput={(e) =>
-                      setForm({ ...form(), documentFileUrl: e.currentTarget.value })
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div class="form-section">
-              <h3>Настройки</h3>
-              <div class="form-grid">
-                <label class="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={form().notificationsEnabled}
-                    onInput={(e) =>
-                      setForm({
-                        ...form(),
-                        notificationsEnabled: e.currentTarget.checked,
-                      })
-                    }
-                  />
-                  Уведомления включены
-                </label>
-
-                <label class="checkbox">
-                  <input
-                    type="checkbox"
-                    checked={form().autoAcceptOrders}
-                    onInput={(e) =>
-                      setForm({
-                        ...form(),
-                        autoAcceptOrders: e.currentTarget.checked,
-                      })
-                    }
-                  />
-                  Авто принятие заказов
-                </label>
-
-                <label>
-                  Язык интерфейса
-                  <input
-                    type="text"
-                    value={form().preferredLanguage}
-                    onInput={(e) =>
-                      setForm({
-                        ...form(),
-                        preferredLanguage: e.currentTarget.value,
-                      })
-                    }
-                  />
-                </label>
-
-                <label>
-                  Комментарий к статусу
-                  <input
-                    type="text"
-                    value={form().statusReason}
-                    onInput={(e) =>
-                      setForm({ ...form(), statusReason: e.currentTarget.value })
-                    }
-                  />
-                </label>
-              </div>
-            </div>
-
-            <Show when={message()}>
-              <p class="message success">{message()}</p>
-            </Show>
-            <Show when={error()}>
-              <p class="message error">{error()}</p>
-            </Show>
-
-            <div class="form-actions">
-              <button
-                type="button"
-                class="secondary"
-                onClick={() => {
-                  setIsFormOpen(false);
-                  setError(null);
-                  setMessage(null);
-                }}
-                disabled={isSubmitting()}
-              >
-                Отмена
-              </button>
-              <button class="primary" type="submit" disabled={isSubmitting()}>
-                {isSubmitting() ? 'Создание...' : 'Создать'}
-              </button>
-            </div>
-          </form>
-        </div>
-      </Show>
-    </main>
+      <main class="page" style={{ flex: '1' }}>
+        {currentPage() === 'dashboard' && <Dashboard />}
+        {currentPage() === 'drivers' && <Drivers />}
+        {currentPage() === 'orders' && <Orders />}
+        {currentPage() === 'zones' && <Zones />}
+        {currentPage() === 'shifts' && <Shifts />}
+        {currentPage() === 'alerts' && <Alerts />}
+      </main>
+    </div>
   );
 };
 

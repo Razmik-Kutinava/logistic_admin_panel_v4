@@ -17,8 +17,8 @@ export class CreateDriverDto {
 
   @IsString()
   @MaxLength(20)
-  @Matches(/^\+?[1-9]\d{1,14}$/, {
-    message: 'Номер телефона должен быть в формате E.164',
+  @Matches(/^[\d\+\-\(\)\s]+$/, {
+    message: 'Номер телефона содержит недопустимые символы',
   })
   phone: string;
 
